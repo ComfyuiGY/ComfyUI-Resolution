@@ -8,4 +8,4 @@ __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 WEB_DIRECTORY = "./web"
 
 # 可选：如果需要在控制台看到提示
-print("高级分辨率选择器插件已加载 - 支持联动功能")
+#print("高级分辨率选择器插件已加载 - 支持联动功能")
