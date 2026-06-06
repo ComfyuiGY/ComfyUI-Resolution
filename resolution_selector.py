@@ -3,6 +3,10 @@
 支持横屏、竖屏、方形三种分辨率独立选择，只能同时生效一个
 """
 
+import torch
+import comfy.utils
+import comfy.model_management
+
 
 class AdvancedResolutionSelector:
     """
@@ -13,7 +17,8 @@ class AdvancedResolutionSelector:
     LANDSCAPE_RESOLUTIONS = {
         "不启用": (0, 0),
         "640x360 (16:9) 横屏": (640, 360),
-        "832x480 (16:9) 横屏": (832, 480),
+        "832x480 (5.2:3) 横屏": (832, 480),
+        "854x480 (16:9) 横屏": (854, 480),
         "960x640 (3:2) 横屏": (960, 640),
         "1024x576 (16:9) 横屏": (1024, 576),
         "1152x896 (9:7) 横屏": (1152, 896),
@@ -37,8 +42,9 @@ class AdvancedResolutionSelector:
     PORTRAIT_RESOLUTIONS = {
         "不启用": (0, 0),
         "480x640 (4:3) 竖屏": (480, 640),
-        "480x832 (9:16) 竖屏": (480, 832),
         "480x800 (5:8) 竖屏": (480, 800),
+        "480x832 (3:5.2) 竖屏": (480, 832),
+        "480x854 (9:16) 竖屏": (480, 854),
         "512x768 (2:3) 竖屏": (512, 768),
         "512x896 (4:7) 竖屏": (512, 896),
         "576x1024 (16:9) 竖屏": (576, 1024),
@@ -50,7 +56,7 @@ class AdvancedResolutionSelector:
         "832x1216 (13:19) 竖屏": (832, 1216),
         "896x1152 (7:9) 竖屏": (896, 1152),
         "1024x1536 (2:3) 竖屏": (1024, 1536),
-        "1080x1920 (16:9) 竖屏": (1080, 1920),
+        "1080x1920 (9:16) 竖屏": (1080, 1920),
         "1080x2160 (18:9) 竖屏": (1080, 2160),
         "1152x2048 (16:9) 竖屏": (1152, 2048),
         "1200x1920 (16:10) 竖屏": (1200, 1920),
@@ -158,11 +164,109 @@ class AdvancedResolutionSelector:
         return (1024, 1024)
 
 
+class AdvancedResolutionSelectorLatent:
+    """
+    高级分辨率选择器节点（带Latent输出）
+    基于选择的分辨率生成空的Latent样本
+    """
+    
+    # 复用相同的分辨率字典
+    LANDSCAPE_RESOLUTIONS = AdvancedResolutionSelector.LANDSCAPE_RESOLUTIONS
+    PORTRAIT_RESOLUTIONS = AdvancedResolutionSelector.PORTRAIT_RESOLUTIONS
+    SQUARE_RESOLUTIONS = AdvancedResolutionSelector.SQUARE_RESOLUTIONS
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "横屏": (list(cls.LANDSCAPE_RESOLUTIONS.keys()), {
+                    "default": "不启用"
+                }),
+                "竖屏": (list(cls.PORTRAIT_RESOLUTIONS.keys()), {
+                    "default": "不启用"
+                }),
+                "方形": (list(cls.SQUARE_RESOLUTIONS.keys()), {
+                    "default": "不启用"
+                }),
+                "自定义宽度": ("INT", {
+                    "default": 1024,
+                    "min": 64,
+                    "max": 8192,
+                    "step": 8
+                }),
+                "自定义高度": ("INT", {
+                    "default": 1024,
+                    "min": 64,
+                    "max": 8192,
+                    "step": 8
+                }),
+                "使用自定义": ("BOOLEAN", {
+                    "default": False,
+                    "label_on": "是",
+                    "label_off": "否"
+                }),
+                "批量大小": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 64,
+                    "step": 1,
+                    "tooltip": "批量大小"
+                }),
+            }
+        }
+    
+    RETURN_TYPES = ("INT", "INT", "LATENT")
+    RETURN_NAMES = ("宽度", "高度", "Latent")
+    FUNCTION = "get_resolution_with_latent"
+    CATEGORY = "utils"
+    
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        """
+        这个方法确保节点状态变化时会被重新执行
+        """
+        return float("NaN")
+    
+    def get_resolution_with_latent(self, 横屏, 竖屏, 方形, 自定义宽度, 自定义高度, 使用自定义, 批量大小):
+        """
+        根据选择返回宽度、高度和对应的空Latent样本
+        """
+        # 1. 优先使用自定义
+        if 使用自定义:
+            width = 自定义宽度
+            height = 自定义高度
+        # 2. 检查横屏（非"不启用"）
+        elif 横屏 != "不启用":
+            width, height = self.LANDSCAPE_RESOLUTIONS.get(横屏, (0, 0))
+        # 3. 检查竖屏（非"不启用"）
+        elif 竖屏 != "不启用":
+            width, height = self.PORTRAIT_RESOLUTIONS.get(竖屏, (0, 0))
+        # 4. 检查方形（非"不启用"）
+        elif 方形 != "不启用":
+            width, height = self.SQUARE_RESOLUTIONS.get(方形, (0, 0))
+        # 5. 全部不启用，返回默认值
+        else:
+            width, height = (1024, 1024)
+        
+        # 确保宽度和高度是8的倍数（VAE要求）
+        width = (width // 8) * 8
+        height = (height // 8) * 8
+        
+        # 生成空Latent样本
+        device = comfy.model_management.get_torch_device()
+        latent = torch.zeros([批量大小, 4, height // 8, width // 8], device=device)
+        latent_result = {"samples": latent}
+        
+        return (width, height, latent_result)
+
+
 # 节点注册
 NODE_CLASS_MAPPINGS = {
     "AdvancedResolutionSelector": AdvancedResolutionSelector,
+    "AdvancedResolutionSelectorLatent": AdvancedResolutionSelectorLatent,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AdvancedResolutionSelector": "高级分辨率选择器",
+    "AdvancedResolutionSelectorLatent": "高级分辨率选择器(Latent)",
 }

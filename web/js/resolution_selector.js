@@ -4,7 +4,9 @@ import { app } from "../../../scripts/app.js";
 app.registerExtension({
     name: "AdvancedResolutionSelector.联动",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name !== "AdvancedResolutionSelector") {
+        // 支持两种节点类型
+        if (nodeData.name !== "AdvancedResolutionSelector" && 
+            nodeData.name !== "AdvancedResolutionSelectorLatent") {
             return;
         }
         
